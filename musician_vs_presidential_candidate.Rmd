@@ -1,0 +1,235 @@
+The Long History Of Musicians Telling Republicans To Stop Playing Their Music  
+Data From FiveThirtyEight  
+As A Visualization  
+Gjeltema, 6/19/2015  
+========================================================  
+The FiveThirtyEight blog had an article about which singers did not allow 
+political candidates to use their songs 
+(see http://fivethirtyeight.com/datalab/the-long-history-of-musicians-telling-republicans-to-stop-playing-their-music/
+). There was no graphic in the article, the data was written as numbered points, 
+which made me think about a visual representation ...  
+
+# Import data
+```{r dataMusiciansCandidates}
+suppressPackageStartupMessages(library("stringr"))
+suppressPackageStartupMessages(library("dplyr"))
+suppressPackageStartupMessages(library("ggplot2"))
+suppressPackageStartupMessages(library("grid"))
+                               
+# the manual way is faster for this data set,
+# but it is interesting to try doing this purely in R.
+
+# copy the data from website 
+data_from_FiveThirtyEight <- c(
+  "    Springsteen objected to Reagan’s use of the song “Born in the U.S.A.” during the 1984 election.", 
+  "    Reagan also got dinged in 1984 by John Cougar Mellencamp for “Pink Houses.”",
+  "    Bobby McFerrin objected to George H.W. Bush using the song “Don’t Worry, Be Happy” in 1988.",
+  "    Sam & Dave objected to Bob Dole using the song “Soul Man” in 1996.",
+  "    Springsteen objected to Dole using “Born in the U.S.A.” in 1996.",
+  "    Mellencamp didn’t grant any more leeway to George W. Bush than to Reagan. Mellencamp complained when Bush used “R.O.C.K. in the U.S.A.” in 2000.",
+  "    Tom Petty objected to Bush using the song “I Won’t Back Down” in 2000.",
+  "    That same election, Sting objected to Bush using “Brand New Day.”",
+  "    In a rare bit of bipartisanship in 2000, Sting also objected to Al Gore using “Brand New Day.”",
+  "    John Hall of the band Orleans objected to Bush using the song “Still the One” during his re-election campaign in 2004.",
+  "    Boston objected to Mike Huckabee using “More Than a Feeling” in 2008.",
+  "    Van Halen objected to John McCain using “Right Now” in 2008.",
+  "    Mellencamp is back! He complained about McCain using “Our Country” in 2008.",
+  "    In the same election, Mellencamp had a problem with McCain using the song “Pink Houses.”",
+  "    Heart objected to McCain using “Barracuda.”",
+  "    Jackson Browne objected to McCain using “Running on Empty.”",
+  "    Bon Jovi objected to McCain using “Who Says You Can’t Go Home.”",
+  "    The Foo Fighters stopped McCain from playing “My Hero.”",
+  "    Tom Petty objected to McCain using “I Won’t Back Down.”",
+  "    ABBA complained about McCain using “Take a Chance on Me.”",
+  "    Sam Moore of Sam & Dave objected to Barack Obama using “Hold On, I’m Coming” during the 2008 election.",
+  "    Survivor objected to Newt Gingrich using the song “Eye of the Tiger” in 2012.",
+  "    Gingrich also was dinged by The Heavy for “How You Like Me Now.”",
+  "    Also in 2012, Dee Snider of Twisted Sister objected to Mitt Romney using “We’re Not Gonna Take It.”",
+  "    Silversun Pickups stopped Romney from playing “Panic Switch.”",
+  "    K’Naan objected to Romney using the song “Wavin’ Flag.”",
+  "    Survivor objected to Romney using “Eye of the Tiger.”",
+  "    Tom Petty complained about Michele Bachmann using “American Girl” in 2012.",
+  "    Katrina and the Waves objected to Bachmann playing “Walking on Sunshine.”",
+  "    And finally, now we have Young’s complaint about Trump’s use of “Rockin’ in the Free World.”"
+  )
+
+
+data_from_FiveThirtyEight <- 
+  data_from_FiveThirtyEight %>% 
+  str_replace_all("\\.",""); # get rid of all dots
+
+# presidental campaign year  ====
+usage_year <- data_from_FiveThirtyEight %>% str_extract("[1-2][0-9]{3}") # some NA
+
+# song titles  ====
+song_name <- data_from_FiveThirtyEight %>% 
+  str_extract("“.+”") %>%
+  str_replace(pattern="“", replacement="") %>% 
+  str_replace(pattern="”", replacement="");
+  
+# names (of politicians and musicians) are capitalized  ====
+nouns <- data_from_FiveThirtyEight %>%
+  # remove song titles 
+  str_replace(pattern=song_name, replacement="") %>%
+  # separate words
+  str_split(" ") %>%
+  # extract words that are capitalized
+  lapply(function(x) str_extract(x, "[A-Z].+")) %>%
+  # merge individual words back to sentence, leaving only capitalized names
+  sapply(function(x) paste(x[!is.na(x)], collapse=" ")) %>%
+  # get rid of 's string
+  str_replace_all(pattern="’s", replacement="") %>%
+  # get rid of stopwords "And", "Also", "That", and "In"  
+  str_replace_all(pattern="And ", replacement="") %>%
+  str_replace_all(pattern="Also ", replacement="") %>%
+  str_replace_all(pattern="That ", replacement="") %>%
+  str_replace_all(pattern="In ", replacement="");
+
+# get politician  ====
+# seems like last word is usually the candidate's name --> parse it out
+politician <- word(nouns,-1) 
+# there seem to be exceptions to 'musician before candidate'
+last_word_not_politic <- c(2,23)
+politician[last_word_not_politic] <- word(nouns[last_word_not_politic], 1)
+# account for 2 people with same last name
+politician[3] <- paste("G.H.W.", politician[3]) # first substitute father
+politician[politician == "Bush"] <- "G.W. Bush" # then substitute son
+rm(last_word_not_politic);
+
+# get musician ====
+musician <- 
+  nouns %>% 
+  str_replace_all(pattern=politician, replacement="") %>% 
+  str_trim(); 
+# need to do a few corrections 
+musician[2]  <- word(musician[2], 3)
+musician[4]  <- "Sam & Dave"
+musician[21] <- musician[4]
+musician[24] <- word(musician[24], 3, 4)
+musician[29] <- "Katrina and the Waves"
+musician[30] <- paste("Neil", musician[30])
+first_word_only           <- c(6, 8, 9, 11, 13, 22)
+musician[first_word_only] <- word(musician[first_word_only], 1)
+first_two_words_only           <- c(3, 7, 10, 12, 28) 
+musician[first_two_words_only] <- word(musician[first_two_words_only], 1, 2);
+rm(first_word_only, first_two_words_only);
+
+# get our data frame ====
+data_songs <- data.frame(
+  Musician   = musician %>% str_replace_all("’", "'"),
+  Song       = song_name %>% str_replace_all("’", "'"),
+  Politician = politician,
+  Year       = as.numeric(usage_year)
+  );
+
+# fill in missing values where known ====
+data_songs <- data_songs %>% 
+  mutate(Year = ifelse((is.na(Year) & (Politician=="McCain")), 2008, Year),
+         Year = ifelse((is.na(Year) & (Politician=="G.W. Bush")), 2000, Year),
+         Year = ifelse((is.na(Year) & (Politician %in% c("Gingrich", "Romney", "Bachmann"))), 2012, Year),
+         Year = ifelse((is.na(Year) & (Politician=="Trump")), 2015, Year)
+         );
+
+# stats ====
+data_songs
+summary(data_songs)
+```
+
+# Create visualizations  
+Now that the data is in good shape, let us create some plots in the 
+Fivethirtyeight style (I'll be using the template from Austin Clemens,
+http://austinclemens.com/blog/2014/07/03/fivethirtyeight-com-style-graphs-in-ggplot2/)  
+
+## Politician vs. Musician
+```{r dataVizByMusician, fig.width=10}
+# ==== sort politician and musician by year and politician ====
+data_songs5 <- data_songs %>% 
+  mutate(Politician = factor(Politician, 
+                             levels=unique(Politician[order(Year, Politician)]), 
+                             ordered=TRUE),
+         Musician = factor(Musician, 
+                           levels=unique(Musician[order(Year, Politician, Musician)]), 
+                           ordered=TRUE));
+
+# ==== take care of overlapping songs from same musician (forbidden for
+# same polititian in same year) by merging the two songs into 1 observation ====
+data_songs5a <- data_songs5 %>% 
+  filter(!(Politician=="McCain" & Musician=="Mellencamp"));
+data_songs5b <- data_songs5 %>% 
+  filter(Politician=="McCain" & Musician=="Mellencamp") %>%
+  mutate(Song = "Our Country \n Pink Houses") %>% .[1,];
+data_songs5combined <- bind_rows(data_songs5a, data_songs5b)
+
+# ==== 538-style plot ====
+ggplot(data_songs5combined) +
+  geom_text(aes(x=Politician, y=Musician, label=Song, color=factor(Year), size=0.6)) +
+  theme_bw() +
+  # Set the entire chart region to a light gray color
+  theme(panel.background=element_rect(fill="#F0F0F0")) +
+  theme(plot.background=element_rect(fill="#F0F0F0")) +
+  theme(panel.border=element_rect(colour="#F0F0F0")) +
+  # Format the grid
+  theme(panel.grid.major=element_line(colour="#D0D0D0",size=.75)) +
+  theme(axis.ticks=element_blank()) +
+  # Dispose of the legend
+  theme(legend.position="none") +
+  # Set title and axis labels, and format these and tick marks
+  ggtitle("Presidental candidates prohibited from playing song during their campaign") +
+  theme(plot.title=element_text(face="bold",hjust=0,vjust=2,colour="#3C3C3C",size=14)) +
+  ylab("Musician") + 
+  xlab(paste0("Politician;   Campaign Year is colorcoded [",min(data_songs5combined$Year),
+              "-",max(data_songs5combined$Year),"]")) +
+  theme(axis.text.x=element_text(size=9,colour="#535353",face="bold")) +
+  theme(axis.text.y=element_text(size=9,colour="#535353",face="bold")) +
+  theme(axis.title.y=element_text(size=9,colour="#535353",face="bold",vjust=1.5)) +
+  theme(axis.title.x=element_text(size=9,colour="#535353",face="bold",vjust=-.5)) +
+  # Big bold line at y=0
+  geom_hline(yintercept=0,size=1.2,colour="#535353") +
+  # Plot margins
+  theme(plot.margin = unit(c(1, 1, .5, .7), "cm"))
+```
+
+## Year vs. Song & Musician
+```{r dataVizBySongMusician, fig.width=10}
+# ==== sort song & musician by year and politician ====
+data_songs2 <- data_songs %>% mutate(
+  SongMusi  = paste0(Song, " (", Musician, ")"),
+  SongMusi2 = factor(SongMusi, levels=unique(SongMusi[order(Year, Politician, Musician, SongMusi)]), ordered=TRUE) 
+  );
+
+# ==== jiggle the names a bit where needed ====
+data_songs2$Year[data_songs2$Musician=="Sting" & data_songs2$Politician=="Gore"] <- 2000.9;
+data_songs2$Year[data_songs2$Musician=="Sting" & data_songs2$Politician=="G.W. Bush"] <- 1998.1;
+data_songs2$Year[data_songs2$Musician=="Survivor" & data_songs2$Politician=="Romney"] <- 2013.5;
+data_songs2$Year[data_songs2$Musician=="Survivor" & data_songs2$Politician=="Gingrich"] <- 2010.5;
+
+
+# ==== 538-style plot ====
+ggplot(data_songs2, aes(x=Year, y=SongMusi2)) +  
+  geom_text(aes(x=Year, y=SongMusi2, label=Politician, color=Politician, size=1)) +
+  theme_bw() +
+  # Set the entire chart region to a light gray color
+  theme(panel.background=element_rect(fill="#F0F0F0")) +
+  theme(plot.background=element_rect(fill="#F0F0F0")) +
+  theme(panel.border=element_rect(colour="#F0F0F0")) +
+  # Format the grid
+  theme(panel.grid.major=element_line(colour="#D0D0D0",size=.75)) +
+  scale_x_continuous(minor_breaks=0,breaks=c(1984, 1988,seq(1996,2012,4),2015),limits=c(1984,2015)) +
+  scale_y_discrete() + 
+  theme(axis.ticks=element_blank()) +
+  # Dispose of the legend
+  theme(legend.position="none") +
+  # Set title and axis labels, and format these and tick marks
+  ggtitle("Presidental candidates prohibited from playing song \n during their campaign") +
+  theme(plot.title=element_text(face="bold",hjust=0,vjust=2,colour="#3C3C3C",size=15)) +
+  ylab("Song (Musician)") + xlab("Campaign Year") +
+  theme(axis.text.x=element_text(size=10,colour="#535353",face="bold")) +
+  theme(axis.text.y=element_text(size=9,colour="#535353",face="bold")) +
+  theme(axis.title.y=element_text(size=10,colour="#535353",face="bold",vjust=1.5)) +
+  theme(axis.title.x=element_text(size=9,colour="#535353",face="bold",vjust=-.5)) +
+  # Big bold line at y=0
+  geom_hline(yintercept=0,size=1.2,colour="#535353") +
+  # Plot margins and finally color
+  #scale_colour_brewer(palette="Paired") +
+  theme(plot.margin = unit(c(1, 1, .5, .7), "cm")) 
+```
