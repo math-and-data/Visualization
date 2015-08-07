@@ -1,0 +1,288 @@
+---
+title: "Gamestats Data Analysis"
+author: "Gjeltema"
+date: "July 20, 2015"
+output: html_document
+---
+
+## Question on Game Statistics  
+Visualize the following data and ... 
+
+## Importing the data
+```{r getData}
+suppressPackageStartupMessages(library("dplyr"))
+suppressPackageStartupMessages(library("ggplot2"))
+
+# ---- get data ----
+gamestats <- read.csv("Q3_data.csv")
+str(gamestats)
+
+# choose proper variable types
+gamestats <- gamestats %>% 
+  mutate(Player1ID = as.factor(Player1ID),
+         Player2ID = as.factor(Player2ID));
+# POSIX does not work well with 'mutate'
+gamestats$DateTime <- as.POSIXct(as.character(gamestats$DateTime), 
+                                 format="%m/%d/%Y %H:%M");
+glimpse(gamestats) # check formats
+```
+
+## Visually exploring the data
+```{r plotSCoreSummary}
+# ---- tidy the data (one observation per row)
+#      by giving each player one single row    ----
+gamestats.combo <- 
+  # put player 1 into player 2
+  gamestats %>% mutate(Player2ID = Player1ID, Player2Score = Player1Score) %>%
+  # combine this swapped data set with original data set
+  rbind(., gamestats) %>% 
+  # keep what is needed
+  select(DateTime, PlayerID=Player2ID, PlayerScore=Player2Score)
+
+# ---- boxplot of score distribution by player ----
+gamestats.combo %>% 
+  ggplot() + geom_boxplot(aes(x=PlayerID, y=PlayerScore, color=PlayerID)) +
+  labs(title="Distribution of Scores by Player Across All Games") + 
+  theme(legend.position="none")
+
+# clean up
+rm(gamestats.combo)
+```
+We see that several players have played only one game or had the same score in each game. 
+We see a few outliers - very high points.
+
+```{r plotOverTime}
+# ---- plot all stats over time ----
+gamestats %>%
+  ggplot(aes(x=DateTime)) + ylab("Player Score") +
+  labs(title="Games Played Over Time", color ='Player ID') +
+  geom_point(aes(y=Player1Score, color=Player1ID)) + 
+  geom_point(aes(y=Player2Score, color=Player2ID)) + 
+  guides(color=guide_legend(ncol=2)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1));
+```
+We see 3 distinct groups of events. Let us separate them and inspect them individually. 
+
+## Segmenting the data
+```{r segmentEvents}
+# time and date separates the three distinct gaming groups
+cutoff_date1 <- as.POSIXct("2015-05-27 02:00:01");
+cutoff_date2 <- as.POSIXct("2015-05-28 00:00:01");
+
+# ---- for each of the 3 distinct groups of activities over time 
+#      we track the number of wins of each player                ----
+gamer.group1 <- gamestats %>% filter(DateTime < cutoff_date1) %>%
+  mutate(Wins.Player1 = cumsum(Player1Score > Player2Score),
+         Wins.Player2 = cumsum(Player1Score < Player2Score),
+         Ties = cumsum(Player1Score == Player2Score)) %>%
+  droplevels();
+
+gamer.group2 <- gamestats %>% filter((DateTime > cutoff_date1) &
+                                     (DateTime < cutoff_date2)) %>%
+  mutate(Wins.Player1 = NA, # not applicable, player ID changes
+         Wins.Player2 = cumsum(Player1Score < Player2Score),
+         Ties = cumsum(Player1Score == Player2Score)) %>%
+  droplevels(); 
+
+gamer.group3 <- gamestats %>% filter(DateTime > cutoff_date2) %>%
+  mutate(Wins.Player1 = cumsum(Player1Score > Player2Score),
+         Wins.Player2 = cumsum(Player1Score < Player2Score),
+         Ties = cumsum(Player1Score == Player2Score)) %>%
+  droplevels();
+
+# ---- summary statistics on each group ----
+gamer.group1 %>% summary
+gamer.group2 %>% summary
+gamer.group3 %>% summary
+```
+
+## Basic plots of the 3 segments of data
+```{r basicSegmentPlots}
+# ---- plot all stats as facets in their own small time frame ----
+# create distinct header for each of the 3 separate groups over time
+gamestats.periods <- gamestats %>% 
+  mutate(TimePeriod = ifelse(DateTime < cutoff_date1, 
+                             paste("1.) Morning of",as.Date(cutoff_date1)), 
+                             ifelse(DateTime > cutoff_date2, 
+                                    paste("3.) Afternoon of", as.Date(cutoff_date2)),
+                                    paste("2.) Afternoon of", as.Date(cutoff_date1)))));
+
+gamestats.periods %>%
+  ggplot(aes(x=DateTime)) + 
+  facet_wrap(~TimePeriod, scale="free_x") +
+  scale_y_continuous(limits = c(0, NA)) +
+  geom_line(aes(y=Player1Score, color=Player1ID, group=Player1ID)) + 
+  geom_line(aes(y=Player2Score, color=Player2ID, group=Player2ID)) +
+  geom_point(aes(y=Player1Score, color=Player1ID, group=Player1ID)) + 
+  geom_point(aes(y=Player2Score, color=Player2ID, group=Player2ID)) +
+  labs(title="Scores In Three Small Time Segments", y="Player Score", color ='Player ID') +
+  guides(color=guide_legend(ncol=2))
+
+# ---- plot each group individually with info on who is leading ----
+gamer.group1 %>%
+  ggplot(aes(x=DateTime)) +
+  labs(title="Segment 1", y="Player Score", color ='Player ID') +
+  geom_line(aes(y=Player1Score, color=paste("Player1, ID",Player1ID))) + 
+  geom_line(aes(y=Player2Score, color=paste("Player2, ID",Player2ID))) +
+  geom_point(aes(y=Player1Score, color=paste("Player1, ID",Player1ID))) + 
+  geom_point(aes(y=Player2Score, color=paste("Player2, ID",Player2ID))) +
+  geom_text(aes(y=0, label=paste0(Wins.Player1,":",Wins.Player2)), color=grey);
+
+gamer.group2 %>%
+  ggplot(aes(x=DateTime)) + 
+  labs(title="Segment 2: (changing) Player 1  vs. (constant) Player 2", 
+       y="Player Score", color='Player ID') +
+  geom_point(aes(y=Player1Score, color="Player1")) + 
+  geom_point(aes(y=Player2Score, color="Player2")) + 
+  facet_wrap(Player1ID ~ Player2ID)#, scales="free")
+
+gamer.group2 %>%
+  ggplot(aes(x=DateTime)) + 
+  geom_point(aes(y=Player1Score, color=Player1ID)) + 
+  geom_point(aes(y=Player2Score)) +
+  geom_line(aes(y=Player2Score)) +
+  geom_text(aes(y=0, label=paste0("_:",Wins.Player2))) + # wins of player 2
+  annotate("text", size=4,
+           x=gamer.group2$DateTime[10],
+           y=gamer.group2$Player2Score[10]*1.5, 
+           label=paste("Player2 ID", gamer.group2$Player2ID[10])) +
+  labs(title="Segment 2: Several (changing) Player 1 vs. One (consistent) Player 2", 
+       y="Player Score", color='Player1 ID') 
+
+gamer.group3 %>%
+  ggplot(aes(x=DateTime)) + 
+  labs(title="Segment 3", y="Player Score", color='Player ID') + 
+  geom_line(aes(y=Player1Score, color=paste("Player1, ID",Player1ID))) + 
+  geom_line(aes(y=Player2Score, color=paste("Player2, ID",Player2ID)))  +
+  geom_text(aes(y=0, label=paste0(Wins.Player1,":",Wins.Player2)), color=grey);
+
+rm(cutoff_date1, cutoff_date2)
+```
+
+## Advanced plots of the 3 segments  
+We draw a plot with scores over time at the center (bottom left), number of wins 
+of each player at the top left, legend aka player IDs at the top right, and point 
+distribution by player on the bottom right side.  
+```{r advancedPlotFct, echo=TRUE}
+suppressPackageStartupMessages(library("gtable"))
+suppressPackageStartupMessages(library("gridExtra"))
+
+# ---- gets only the legend from a plot with legend ----
+#' @description    function for extracting a legend from a plot
+#' @input a.gplot  a ggplot2 object with legend
+#' @output         a gtable object containing only the legend of the ggplot2 object
+#' @example        plegend.group1 <- g_legend(center_plot(gamer.group1))
+#'
+#' code from https://github.com/hadley/ggplot2/wiki/Share-a-legend-between-two-ggplot2-graphs 
+#' and http://stackoverflow.com/questions/13649473/add-a-common-legend-for-combined-ggplots
+g_legend <- function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+  }
+
+
+# ---- main plot with legend; 
+#      returns a ggplot object incl. legend ----
+center_plot<- function(data_set) {
+  # extract the date part of date&time for the x-axis label
+  x_axis_label <- paste("Time on", as.Date(data_set$DateTime[1]))
+  
+  pcenter.group <- data_set %>%
+    ggplot(aes(x=DateTime)) + 
+    scale_y_continuous(limits = c(0, NA)) +
+    geom_point(aes(y=Player1Score, color=Player1ID)) + 
+    geom_point(aes(y=Player2Score, color=Player2ID)) +  
+    geom_line(aes(y=Player2Score, group=Player2ID), colour="gray75", size=0.5) +
+    geom_line(aes(y=Player1Score, group=Player1ID), colour="gray75", size=0.5) + 
+    theme(plot.margin = unit(c(0.7, 0.7, 0.5, 0.5), "lines")) +
+    labs(x=x_axis_label, y="Player Score", color='Player ID') + 
+    guides(color=guide_legend(ncol=1));
+  
+  return(pcenter.group)
+  }
+
+# ---- step function with number of wins ----
+# only plots the wins of player 2, used only for 2nd segment
+top_left_plot_onlyPlayer2 <- function(data_set) {
+  ptop.group <- data_set %>%
+    ggplot(aes(x=DateTime)) +
+    # step function for player 2
+    geom_step(aes(y=Wins.Player2, color=Player2ID)) +
+    # adjust for y-axis to include 0
+    scale_y_continuous(limits = c(-0.1, NA)) +
+    theme(legend.position="none",
+          axis.text.x = element_blank(), 
+          axis.ticks.x = element_blank(),
+          plot.margin = unit(c(1, 0.7, -0.5, 0.5), "lines")) + 
+    labs(x=NULL, y=paste("Games Won \n by P.", 
+                                      gamer.group2$Player2ID[1]))
+  
+  return(ptop.group)
+  }
+
+# plots the wins of players 1 & 2, used for 1st and 3rd segment
+top_left_plot <- function(data_set) {
+  ptop.group <- 
+    top_left_plot_onlyPlayer2(data_set) +
+    # include step function for player 1 as well
+    geom_step(data=data_set, aes(x=DateTime, y=Wins.Player1, color=Player1ID)) +  
+    # set y-label to general description
+    labs(y="Games Won \n ");
+  
+  return(ptop.group)
+  }
+
+
+# ---- score density distribution  ----
+bottom_right_plot <- function(data_set) {
+  pright.group <- data_set %>%
+    ggplot() + 
+    geom_line(aes(x=Player1Score, color=Player1ID), stat="density") + 
+    geom_line(aes(x=Player2Score, color=Player2ID), stat="density") + 
+    scale_x_continuous(limits = c(0, NA)) +
+    theme(legend.position="none", 
+          axis.text.y = element_blank(),
+          axis.ticks = element_blank(), 
+          plot.margin = unit(c(0.7, 1, 0.5, -0.5), "lines")) + 
+    labs(x=NULL, y="Score Density") +
+    coord_flip()
+  
+  return(pright.group)
+  }
+```
+
+### Segment 1 overall plot
+```{r plotSeg1}
+grid.arrange(
+  arrangeGrob(top_left_plot(gamer.group1), 
+              g_legend(center_plot(gamer.group1)), 
+              center_plot(gamer.group1) + theme(legend.position="none"), 
+              bottom_right_plot(gamer.group1), 
+              widths=c(8,2), heights=c(3,7))
+  )
+```
+
+### Segment 2 overall plot
+```{r plotSeg2}
+grid.arrange(
+  arrangeGrob(top_left_plot_onlyPlayer2(gamer.group2),               
+              g_legend(center_plot(gamer.group2) + # 2-column legend
+                         guides(color=guide_legend(ncol=2))),              
+              center_plot(gamer.group2) + theme(legend.position="none"), 
+              bottom_right_plot(gamer.group2),               
+              widths=c(8,2), heights=c(4,7))
+  )
+```
+
+### Segment 3 overall plot
+```{r plotSeg3}
+grid.arrange(
+  arrangeGrob(top_left_plot(gamer.group3), 
+              g_legend(center_plot(gamer.group3)), 
+              center_plot(gamer.group3) + theme(legend.position="none"), 
+              bottom_right_plot(gamer.group3), 
+              widths=c(8,2), heights=c(3,7))
+  )
+```
