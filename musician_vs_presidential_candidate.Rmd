@@ -1,7 +1,10 @@
-The Long History Of Musicians Telling Republicans To Stop Playing Their Music  
-Data From FiveThirtyEight  
-As A Visualization  
-Gjeltema, 6/19/2015  
+---
+title: "The Long History Of Musicians Telling Republicans To Stop Playing Their Music"
+author: "Gjeltema"
+date: "June 19, 2015"
+output: html_document
+---
+Data From FiveThirtyEight As A Visualization  
 ========================================================  
 The FiveThirtyEight blog had an article about which singers did not allow 
 political candidates to use their songs 
